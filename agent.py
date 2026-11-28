@@ -7,8 +7,6 @@ from livekit.agents.llm import ChatContext
 from livekit.plugins import google
 import core
 
-print(">>> NEW AGENT FILE:", __file__)
-
 SESSION = "voice"
 
 
@@ -34,26 +32,33 @@ class Secretary(Agent):
 
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
-    print(">>> NEW ENTRYPOINT RUNNING")
 
-    kwargs = {"voice": os.getenv("GEMINI_VOICE", "Aoede"), "temperature": 0.8}
-    if os.getenv("GEMINI_LIVE_MODEL"):
-        kwargs["model"] = os.getenv("GEMINI_LIVE_MODEL")
-    session = AgentSession(llm=google.realtime.RealtimeModel(**kwargs))
+    model = os.getenv("GEMINI_LIVE_MODEL") or "gemini-3.8-live"
+    session = AgentSession(llm=google.realtime.RealtimeModel(
+        model=model,
+        api_version="v1beta",
+        voice=os.getenv("GEMINI_VOICE", "Puck"),   # صوت ولد
+        temperature=0.8,
+    ))
 
     @session.on("conversation_item_added")
     def _saved(ev):
-        it = ev.item
-        if it.role in ("user", "assistant") and it.text_content:
-            core.save(SESSION, it.role, it.text_content)
+        try:
+            it = ev.item
+            role = getattr(it, "role", None)
+            text = getattr(it, "text_content", None)
+            if role in ("user", "assistant") and text:
+                core.save(SESSION, role, text)
+        except Exception as e:
+            print("save error:", e)
 
     hist = ChatContext()
     for role, content in core.history(SESSION):
         hist.add_message(role=role, content=content)
 
     await session.start(agent=Secretary(hist), room=ctx.room)
-    await session.generate_reply(instructions="رحبي بأحمد بجملة قصيرة وعفوية وسأليه شنو يريد.")
+    await session.generate_reply(instructions="رحب بأحمد بجملة قصيرة وعفوية وسأله شنو يريد.")
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, agent_name="noor"))
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
